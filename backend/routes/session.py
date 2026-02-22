@@ -9,7 +9,7 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 
 from db.supabase_client import supabase
-from core.concept_graph import get_root_gaps, get_weakness_chain, detect_topic, count_mistakes
+from core.concept_graph import get_root_gaps, get_weakness_chain, get_bfs_learning_path, detect_topic, count_mistakes
 from core.mastery import calculate_mastery
 from core.question_bank import get_question
 from core.prompt_builder import (
@@ -187,9 +187,12 @@ async def session(req: SessionRequest):
     code        = req.student_code or ""
     whats_wrong = req.whats_wrong or ""
 
-    # Step 1 — detect topic in Python (keyword match, zero API cost)
-    topic_key = req.topic if req.mode == "practice" else detect_topic(problem, code)
-    print(f"[session] detected topic: {topic_key}")
+    # Step 1 — TF-IDF + Naive Bayes topic detection (trains once on startup, ~1ms per call)
+    if req.mode == "practice":
+        topic_key, topic_confidence = req.topic, 1.0
+    else:
+        topic_key, topic_confidence = detect_topic(problem, code)
+    print(f"[session] detected topic: {topic_key} (confidence={topic_confidence:.0%})")
 
     # Step 2 — run concept graph in Python (no API)
     weak_topics    = student.get("weak_topics") or []
@@ -203,6 +206,10 @@ async def session(req: SessionRequest):
     profile_misconceptions = student.get("misconceptions") or {}
     misconception_list = list(profile_misconceptions.values()) if isinstance(profile_misconceptions, dict) \
                          else list(profile_misconceptions)
+
+    # Step 4b — BFS learning path (pure graph algorithm, zero API cost)
+    mastery_data_now = student.get("mastery_data") or {}
+    learning_path = get_bfs_learning_path(topic_key, mastery_data_now, threshold=40)
 
     print(f"[session] prereq_gaps={prereq_gaps}, mistakes={mistake_count}, topic={topic_key}")
 
@@ -247,8 +254,10 @@ async def session(req: SessionRequest):
         "corrected_code":      result.get("corrected_code"),
         "follow_up_question":  result.get("follow_up_question", ""),
         "topic_category":      topic_category,
+        "topic_confidence":    topic_confidence,           # TF-IDF NB confidence score
         "is_correct":          is_correct,
         "root_gaps":           root_gaps,
+        "learning_path":       learning_path,             # BFS-ordered study path
         "mastery":             mastery_data,
         "updated_topic_score": new_score,
         "xp_earned":           xp_earned,
