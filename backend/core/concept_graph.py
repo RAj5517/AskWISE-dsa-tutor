@@ -2,9 +2,6 @@
 # Maps each topic -> list of topics that must be understood first
 
 from collections import deque
-from sklearn.pipeline import Pipeline
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.naive_bayes import MultinomialNB
 
 DSA_CONCEPT_GRAPH: dict[str, list[str]] = {
     "recursion":        [],
@@ -26,132 +23,52 @@ DSA_CONCEPT_GRAPH: dict[str, list[str]] = {
 }
 
 
-# ── TF-IDF + Naive Bayes Training Corpus ─────────────────────────────────────
-# Each entry: (training_text, topic_label)
-# Minimal but representative — trains in <50ms on startup
+# ── Topic detection (pure Python, zero API cost) ──────────────────────────────
 
-_TRAINING_DATA = [
-    # arrays
-    ("array list index subarray nums element slice iterate for loop append len", "arrays"),
-    ("arr nums list index subarray contiguous elements access", "arrays"),
-    ("initialize array length size element access index bounds", "arrays"),
-    ("sum of array max element find minimum search array linear scan", "arrays"),
-
-    # hashing
-    ("hashmap dictionary counter defaultdict frequency count lookup", "hashing"),
-    ("hash map key value pair dict get set seen visited frequency", "hashing"),
-    ("two sum anagram group valid parentheses hash table", "hashing"),
-    ("counter defaultdict collections frequency map occurrence", "hashing"),
-
-    # two_pointers
-    ("two pointers left right pointer slow fast converge meet", "two_pointers"),
-    ("pair sum sorted array left right move inward shrink", "two_pointers"),
-    ("three sum container water trapping rain palindrome check", "two_pointers"),
-
-    # sliding_window
-    ("sliding window window size expand shrink substring maximum subarray", "sliding_window"),
-    ("window fixed size k elements slide move deque maximum minimum", "sliding_window"),
-    ("longest without repeating characters minimum size subarray sum window", "sliding_window"),
-
-    # binary_search
-    ("binary search mid lo hi left right bisect sorted search halve", "binary_search"),
-    ("log n search space mid equals target sorted array pivoted", "binary_search"),
-    ("find peak element search rotated array bisect left right", "binary_search"),
-
-    # sorting
-    ("sort merge sort quicksort bubble insertion selection comparator key", "sorting"),
-    ("merge sort divide conquer partition pivot compare swap in-place", "sorting"),
-    ("sort array ascending descending comparator lambda sorted heapq nsmallest", "sorting"),
-
-    # linked_lists
-    ("linked list node next head tail singly doubly curr prev pointer", "linked_lists"),
-    ("node next curr head reverse traverse pointer slow fast cycle detection", "linked_lists"),
-    ("linked list insert delete merge nodes reverse k groups cycle", "linked_lists"),
-
-    # stacks
-    ("stack push pop peek top lifo last in first out overflow", "stacks"),
-    ("bracket balanced parentheses stack monotonic next greater element", "stacks"),
-    ("stack call undo history last in first out push pop top empty", "stacks"),
-
-    # queues
-    ("queue enqueue dequeue popleft fifo first in first out deque", "queues"),
-    ("bfs queue level order traversal deque rotate circular buffer", "queues"),
-    ("priority queue min heap max heap task scheduling round robin", "queues"),
-
-    # recursion
-    ("recursion recursive base case call stack factorial fibonacci", "recursion"),
-    ("recurse depth return base case stack overflow memoize top down", "recursion"),
-    ("divide conquer recursive split merge combine base case return", "recursion"),
-
-    # trees
-    ("binary tree inorder preorder postorder root left right leaf node", "trees"),
-    ("tree traversal height depth level bfs dfs root children subtree", "trees"),
-    ("binary tree path sum diameter lowest common ancestor lca", "trees"),
-
-    # bst
-    ("binary search tree bst insert delete search left right smaller larger", "bst"),
-    ("bst inorder sorted valid bst kth smallest successor predecessor", "bst"),
-
-    # heaps
-    ("heap heapq min heap max heap priority queue nlargest nsmallest", "heaps"),
-    ("heap push pop k largest elements top k frequent words heap", "heaps"),
-
-    # graphs
-    ("graph adjacency list matrix edge vertex vertices neighbor connected", "graphs"),
-    ("directed undirected weighted cycle detect topological sort", "graphs"),
-    ("graph node edge dfs bfs visited neighbors adjacency matrix list", "graphs"),
-
-    # bfs_dfs
-    ("dfs depth first search backtrack explore visit mark unvisited stack", "bfs_dfs"),
-    ("bfs breadth first search level order queue visited deque shortest path", "bfs_dfs"),
-    ("graph traversal connected components islands flood fill bfs dfs", "bfs_dfs"),
-    ("shortest path unweighted bfs level visited queue deque", "bfs_dfs"),
-
-    # dp
-    ("dynamic programming memoization tabulation knapsack subproblem optimal", "dp"),
-    ("dp memo cache top down bottom up state transition table", "dp"),
-    ("fibonacci coin change longest increasing subsequence edit distance dp", "dp"),
-    ("dp array 2d grid path count memorize overlapping subproblems", "dp"),
-]
-
-_texts  = [t for t, _ in _TRAINING_DATA]
-_labels = [l for _, l in _TRAINING_DATA]
-
-# Train on module load — takes ~30ms, done once per server restart
-_classifier: Pipeline = Pipeline([
-    ("tfidf", TfidfVectorizer(
-        ngram_range=(1, 2),   # unigrams + bigrams for phrases like "binary search"
-        sublinear_tf=True,    # log(TF) — dampens very frequent terms
-        min_df=1,
-    )),
-    ("nb", MultinomialNB(alpha=0.1)),  # alpha=0.1 (low smoothing = sharper predictions)
-])
-_classifier.fit(_texts, _labels)
-
-
-# ── Public API ────────────────────────────────────────────────────────────────
-
-def detect_topic(question: str, code: str) -> tuple[str, float]:
+def detect_topic(question: str, code: str) -> str:
     """
-    TF-IDF + Naive Bayes topic classification.
-    Returns (topic_key, confidence_score).
-    Runs in ~1ms, zero API cost.
+    Keyword-based topic detection from student input + code.
+    Runs in microseconds, no API call needed.
+    Returns a snake_case topic key matching DSA_CONCEPT_GRAPH.
     """
-    text = (question + " " + code).strip()
-    if not text:
-        return "general", 0.0
+    text = (question + " " + code).lower()
 
-    proba = _classifier.predict_proba([text])[0]
-    classes = _classifier.classes_
-    best_idx = proba.argmax()
-    topic = classes[best_idx]
-    confidence = round(float(proba[best_idx]), 3)
+    if any(w in text for w in ["dfs", "depth first", "depth-first"]):
+        return "bfs_dfs"
+    if any(w in text for w in ["bfs", "breadth first", "breadth-first", "level order"]):
+        return "bfs_dfs"
+    if any(w in text for w in ["inorder", "preorder", "postorder", "binary tree", "root.left", "root.right"]):
+        return "trees"
+    if any(w in text for w in ["bst", "binary search tree"]):
+        return "bst"
+    if any(w in text for w in ["graph", "adjacency", "edge", "vertex", "vertices", "neighbor"]):
+        return "graphs"
+    if any(w in text for w in ["factorial", "fibonacci", "recursion", "recursive", "base case", "recurse"]):
+        return "recursion"
+    if any(w in text for w in ["linked list", "node.next", "curr.next", "head.next", "singly", "doubly"]):
+        return "linked_lists"
+    if any(w in text for w in ["stack", "push", "pop", "lifo"]):
+        return "stacks"
+    if any(w in text for w in ["queue", "enqueue", "dequeue", "fifo", "popleft"]):
+        return "queues"
+    if any(w in text for w in ["hashmap", "hashtable", "dictionary", "hash map", "counter(", "defaultdict"]):
+        return "hashing"
+    if any(w in text for w in ["two pointer", "two-pointer", "left pointer", "right pointer", "slow", "fast pointer"]):
+        return "two_pointers"
+    if any(w in text for w in ["binary search", "mid =", "lo =", "hi =", "bisect"]):
+        return "binary_search"
+    if any(w in text for w in ["sliding window", "window size", "window["]):
+        return "sliding_window"
+    if any(w in text for w in ["merge sort", "quicksort", "bubble sort", "insertion sort", "selection sort", "sort("]):
+        return "sorting"
+    if any(w in text for w in ["dp", "dynamic programming", "memoiz", "tabulation", "knapsack", "subproblem", "memo["]):
+        return "dp"
+    if any(w in text for w in ["heap", "min heap", "max heap", "heapq", "priority queue"]):
+        return "heaps"
+    if any(w in text for w in ["array", "subarray", "arr[", "nums[", "list["]):
+        return "arrays"
 
-    # If confidence is very low, fall back to "general"
-    if confidence < 0.15:
-        return "general", confidence
-
-    return topic, confidence
+    return "general"
 
 
 def get_prerequisites(topic: str) -> list[str]:
@@ -192,19 +109,15 @@ def get_bfs_learning_path(
 
     Algorithm:
       1. BFS backwards from target: collect ALL prerequisite topics at each level
-      2. Reverse the BFS order → study order (foundations first)
+      2. Reverse the BFS order -> study order (foundations first)
       3. Filter out topics already mastered (score >= threshold)
-      4. Append the target itself if not yet mastered
-
-    Returns an ordered list of topics the student should study, from
-    most foundational to target.
 
     Example:
       target="bfs_dfs", weak=["graphs", "stacks", "arrays"]
-      → ["arrays", "stacks", "graphs", "bfs_dfs"]
+      -> ["arrays", "stacks", "graphs", "bfs_dfs"]
     """
     visited = set()
-    bfs_order = []   # topics in BFS order (target → prerequisites)
+    bfs_order = []
 
     queue = deque([target_topic])
     visited.add(target_topic)
@@ -217,16 +130,11 @@ def get_bfs_learning_path(
                 visited.add(prereq)
                 queue.append(prereq)
 
-    # Reverse: prerequisites come before topics that need them
+    # Reverse: prerequisites first, target last
     study_order = list(reversed(bfs_order))
 
-    # Filter: only include topics where student is weak
-    weak_path = [
-        t for t in study_order
-        if mastery_data.get(t, 0) < threshold
-    ]
-
-    return weak_path
+    # Filter: only topics where student is weak
+    return [t for t in study_order if mastery_data.get(t, 0) < threshold]
 
 
 def count_mistakes(interactions: list, topic: str) -> int:

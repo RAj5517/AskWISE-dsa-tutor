@@ -187,12 +187,12 @@ async def session(req: SessionRequest):
     code        = req.student_code or ""
     whats_wrong = req.whats_wrong or ""
 
-    # Step 1 — TF-IDF + Naive Bayes topic detection (trains once on startup, ~1ms per call)
+    # Step 1 — keyword-based topic detection (microseconds, zero API cost)
     if req.mode == "practice":
-        topic_key, topic_confidence = req.topic, 1.0
+        topic_key = req.topic
     else:
-        topic_key, topic_confidence = detect_topic(problem, code)
-    print(f"[session] detected topic: {topic_key} (confidence={topic_confidence:.0%})")
+        topic_key = detect_topic(problem, code)
+    print(f"[session] detected topic: {topic_key}")
 
     # Step 2 — run concept graph in Python (no API)
     weak_topics    = student.get("weak_topics") or []
@@ -254,10 +254,9 @@ async def session(req: SessionRequest):
         "corrected_code":      result.get("corrected_code"),
         "follow_up_question":  result.get("follow_up_question", ""),
         "topic_category":      topic_category,
-        "topic_confidence":    topic_confidence,           # TF-IDF NB confidence score
         "is_correct":          is_correct,
         "root_gaps":           root_gaps,
-        "learning_path":       learning_path,             # BFS-ordered study path
+        "learning_path":       learning_path,
         "mastery":             mastery_data,
         "updated_topic_score": new_score,
         "xp_earned":           xp_earned,
