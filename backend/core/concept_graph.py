@@ -1,8 +1,6 @@
 # DSA Concept Prerequisite Graph
 # Maps each topic -> list of topics that must be understood first
 
-from collections import deque
-
 DSA_CONCEPT_GRAPH: dict[str, list[str]] = {
     "recursion":        [],
     "arrays":           [],
@@ -23,6 +21,35 @@ DSA_CONCEPT_GRAPH: dict[str, list[str]] = {
 }
 
 
+def get_prerequisites(topic: str) -> list[str]:
+    """Return direct prerequisites of a topic."""
+    return DSA_CONCEPT_GRAPH.get(topic, [])
+
+
+def get_root_gaps(topic: str, weak_topics: list[str]) -> list[str]:
+    """
+    Given a target topic and the student's weak topics,
+    return which prerequisites of that topic are also weak.
+    These are the 'root gaps' — fix these first.
+    """
+    prereqs = DSA_CONCEPT_GRAPH.get(topic, [])
+    return [p for p in prereqs if p in weak_topics]
+
+
+def get_weakness_chain(mastery_data: dict[str, int], threshold: int = 40) -> list[str]:
+    """
+    Return weak topics (mastery below threshold) sorted by how many
+    other topics they block — most blocking topics come first.
+    """
+    weak = [topic for topic, score in mastery_data.items() if score < threshold]
+
+    def blocking_count(t: str) -> int:
+        """How many other topics list t as a prerequisite."""
+        return sum(1 for prereqs in DSA_CONCEPT_GRAPH.values() if t in prereqs)
+
+    return sorted(weak, key=blocking_count, reverse=True)
+
+
 # ── Topic detection (pure Python, zero API cost) ──────────────────────────────
 
 def detect_topic(question: str, code: str) -> str:
@@ -37,10 +64,8 @@ def detect_topic(question: str, code: str) -> str:
         return "bfs_dfs"
     if any(w in text for w in ["bfs", "breadth first", "breadth-first", "level order"]):
         return "bfs_dfs"
-    if any(w in text for w in ["inorder", "preorder", "postorder", "binary tree", "root.left", "root.right"]):
+    if any(w in text for w in ["inorder", "preorder", "postorder", "binary tree", "bst", "root.left", "root.right"]):
         return "trees"
-    if any(w in text for w in ["bst", "binary search tree"]):
-        return "bst"
     if any(w in text for w in ["graph", "adjacency", "edge", "vertex", "vertices", "neighbor"]):
         return "graphs"
     if any(w in text for w in ["factorial", "fibonacci", "recursion", "recursive", "base case", "recurse"]):
@@ -69,72 +94,6 @@ def detect_topic(question: str, code: str) -> str:
         return "arrays"
 
     return "general"
-
-
-def get_prerequisites(topic: str) -> list[str]:
-    """Return direct prerequisites of a topic."""
-    return DSA_CONCEPT_GRAPH.get(topic, [])
-
-
-def get_root_gaps(topic: str, weak_topics: list[str]) -> list[str]:
-    """
-    Given a target topic and the student's weak topics,
-    return which prerequisites of that topic are also weak.
-    These are the 'root gaps' — fix these first.
-    """
-    prereqs = DSA_CONCEPT_GRAPH.get(topic, [])
-    return [p for p in prereqs if p in weak_topics]
-
-
-def get_weakness_chain(mastery_data: dict[str, int], threshold: int = 40) -> list[str]:
-    """
-    Return weak topics (mastery below threshold) sorted by how many
-    other topics they block — most blocking topics come first.
-    """
-    weak = [topic for topic, score in mastery_data.items() if score < threshold]
-
-    def blocking_count(t: str) -> int:
-        return sum(1 for prereqs in DSA_CONCEPT_GRAPH.values() if t in prereqs)
-
-    return sorted(weak, key=blocking_count, reverse=True)
-
-
-def get_bfs_learning_path(
-    target_topic: str,
-    mastery_data: dict[str, int],
-    threshold: int = 40,
-) -> list[str]:
-    """
-    BFS-based learning path from fundamentals to target_topic.
-
-    Algorithm:
-      1. BFS backwards from target: collect ALL prerequisite topics at each level
-      2. Reverse the BFS order -> study order (foundations first)
-      3. Filter out topics already mastered (score >= threshold)
-
-    Example:
-      target="bfs_dfs", weak=["graphs", "stacks", "arrays"]
-      -> ["arrays", "stacks", "graphs", "bfs_dfs"]
-    """
-    visited = set()
-    bfs_order = []
-
-    queue = deque([target_topic])
-    visited.add(target_topic)
-
-    while queue:
-        node = queue.popleft()
-        bfs_order.append(node)
-        for prereq in DSA_CONCEPT_GRAPH.get(node, []):
-            if prereq not in visited:
-                visited.add(prereq)
-                queue.append(prereq)
-
-    # Reverse: prerequisites first, target last
-    study_order = list(reversed(bfs_order))
-
-    # Filter: only topics where student is weak
-    return [t for t in study_order if mastery_data.get(t, 0) < threshold]
 
 
 def count_mistakes(interactions: list, topic: str) -> int:
