@@ -311,10 +311,4 @@ The asymmetry (+8 / −12) is intentional — a student must demonstrate consist
 
 ---
 
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
 <p align="center">Built with ❤️ at SpeedRun 2026 AI Hackathon</p>
